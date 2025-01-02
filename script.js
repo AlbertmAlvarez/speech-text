@@ -2,132 +2,80 @@ let synth = window.speechSynthesis;
 let voices = [];
 let mediaRecorder;
 let audioChunks = [];
-let isRecording = false;
 
-// Initialize speech synthesis
-function initSpeechSynth() {
-    voices = synth.getVoices();
-    const voiceSelect = document.getElementById('voiceSelect');
-    voiceSelect.innerHTML = '';
+// Enhanced audio recording setup
+async function setupRecording() {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const destination = audioContext.createMediaStreamDestination();
+    const gainNode = audioContext.createGain();
     
-    voices.forEach((voice, index) => {
-        const option = new Option(voice.name, index);
-        voiceSelect.add(option);
+    // Improve audio quality settings
+    gainNode.gain.value = 1.5; // Enhanced volume
+    gainNode.connect(destination);
+    
+    mediaRecorder = new MediaRecorder(destination.stream, {
+        mimeType: 'audio/webm;codecs=opus',
+        audioBitsPerSecond: 128000 // Higher bitrate for better quality
     });
+    
+    return destination;
 }
 
-  if (speechSynthesis.onvoiceschanged !== undefined) {
-    speechSynthesis.onvoiceschanged = initSpeechSynth;
-}
-
-document.getElementById('rate').addEventListener('input', (e) => {
-    document.getElementById('rateValue').textContent = e.target.value;
-});
-
-document.getElementById('pitch').addEventListener('input', (e) => {
-    document.getElementById('pitchValue').textContent = e.target.value;
-});
-
-document.getElementById('emotionSelect').addEventListener('change', (e) => {
-    document.getElementById('currentEmotion').textContent = `Current Style: ${e.target.options[e.target.selectedIndex].text}`;
-});
-
-document.getElementById('topicSelect').addEventListener('change', (e) => {
-    document.getElementById('topicIndicator').textContent = `Subject: ${e.target.options[e.target.selectedIndex].text}`;
-});
-
-document.getElementById('speakButton').addEventListener('click', async () => {
-    if (!isRecording) {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
-            audioChunks = [];
-
-            mediaRecorder.ondataavailable = (event) => {
-                audioChunks.push(event.data);
-            };
-
-            mediaRecorder.onstop = () => {
-                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                const audioUrl = URL.createObjectURL(audioBlob);
-                addRecordingToList(audioUrl);
-            };
-
-            mediaRecorder.start();
-            isRecording = true;
-            speak();
-        } catch (err) {
-            console.error('Error accessing microphone:', err);
-        }
-    }
-});
-
-// Speak function
-function speak() {
+async function speak() {
+    const destination = await setupRecording();
     const text = document.getElementById('textInput').value;
     const utterance = new SpeechSynthesisUtterance(text);
     
-    const voiceSelect = document.getElementById('voiceSelect');
-    utterance.voice = voices[voiceSelect.value];
-    
+    // Enhanced voice settings
+    utterance.voice = voices[document.getElementById('voiceSelect').value];
     utterance.rate = parseFloat(document.getElementById('rate').value);
     utterance.pitch = parseFloat(document.getElementById('pitch').value);
-
-    utterance.onend = () => {
-        if (mediaRecorder && isRecording) {
-            mediaRecorder.stop();
-            isRecording = false;
-        }
+    utterance.volume = 5.0; 
+    
+    audioChunks = [];
+    
+    mediaRecorder.ondataavailable = (event) => {
+        audioChunks.push(event.data);
     };
 
+    mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunks, {
+            type: 'audio/webm'
+        });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        addEnhancedRecording(audioUrl);
+    };
+
+    mediaRecorder.start();
     synth.speak(utterance);
 }
 
-// Pause button
-document.getElementById('pauseButton').addEventListener('click', () => {
-    if (synth.speaking) {
-        if (synth.paused) {
-            synth.resume();
-        } else {
-            synth.pause();
-        }
-    }
-});
-
-// Stop button
-document.getElementById('stopButton').addEventListener('click', () => {
-    synth.cancel();
-    if (mediaRecorder && isRecording) {
-        mediaRecorder.stop();
-        isRecording = false;
-    }
-});
-
-// Add recording to list// Add this function to create a download button for each recording
-function addRecordingToList(audioUrl) {
+function addEnhancedRecording(audioUrl) {
     const recordingsList = document.getElementById('recordingsList');
     const recordingItem = document.createElement('div');
-    recordingItem.className = 'recording-item mb-2';
+    recordingItem.className = 'recording-item mb-3 p-3 border rounded shadow-sm';
     
-    const timestamp = new Date().toLocaleTimeString();
+    const timestamp = new Date().toLocaleString();
     const voiceUsed = document.getElementById('voiceSelect').options[document.getElementById('voiceSelect').selectedIndex].text;
     
     recordingItem.innerHTML = `
-        <div class="d-flex align-items-center flex-wrap">
-            <audio controls src="${audioUrl}" class="me-2"></audio>
-            <span class="text-muted me-2">${timestamp}</span>
-            <span class="badge bg-info me-2">Voice: ${voiceUsed}</span>
-            <a href="${audioUrl}" download="recording_${timestamp}.wav" class="btn btn-sm btn-success me-2">
-                <i class="fas fa-download"></i> Download
-            </a>
-            <button class="btn btn-sm btn-outline-danger" onclick="this.parentElement.remove()">
-                <i class="fas fa-trash"></i>
-            </button>
+        <div class="d-flex flex-column">
+            <div class="d-flex align-items-center mb-2">
+                <span class="badge bg-primary me-2">Recording ${timestamp}</span>
+                <span class="badge bg-info">Voice: ${voiceUsed}</span>
+            </div>
+            <audio controls src="${audioUrl}" class="w-100 mb-2"></audio>
+            <div class="btn-group">
+                <a href="${audioUrl}" download="Enhanced_Recording_${timestamp}.webm" 
+                   class="btn btn-success btn-sm">
+                    <i class="fas fa-download me-1"></i> Download
+                </a>
+                <button class="btn btn-danger btn-sm" onclick="this.closest('.recording-item').remove()">
+                    <i class="fas fa-trash me-1"></i> Delete
+                </button>
+            </div>
         </div>
     `;
     
-    recordingsList.appendChild(recordingItem);
+    recordingsList.insertBefore(recordingItem, recordingsList.firstChild);
 }
-document.addEventListener('DOMContentLoaded', function() {
-  
-});
